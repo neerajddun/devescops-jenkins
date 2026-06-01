@@ -37,7 +37,7 @@ pipeline {
                     docker run -d \
                         --name flask-app \
                         -p 5000:5000 \
-                        neeraj91/item-code-flask:latest
+                        neeraj91/flask-app:latest
                 '''
             }
         }
