@@ -10,7 +10,7 @@ pipeline {
 
         stage('Build Image') {
             steps {
-                sh 'docker build -t neeraj91/item-code-flask:latest .'
+                sh 'docker build -t neeraj91/flask-app:latest .'
             }
         }
 
@@ -23,7 +23,7 @@ pipeline {
                 )]) {
                     sh '''
                         echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker push neeraj91/item-code-flask:latest
+                        docker push neeraj91/flask-app:latest
                     '''
                 }
             }
