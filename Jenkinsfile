@@ -51,8 +51,8 @@ pipeline {
             }
         }
 
-        stage("Cleanup") {
-            steps {
+        post {
+            always {
                 cleanWs()
             }
         }
