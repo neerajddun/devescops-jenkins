@@ -1,16 +1,95 @@
 pipeline {
     agent any
 
+    environment {
+        DOCKER_IMAGE   = "neeraj91/flask-app"
+        DOCKER_TAG     = "${BUILD_NUMBER}"
+        SONAR_PROJECT  = "flask-app"
+    }
+
     stages {
+
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/neerajddun/flask-app.git'
             }
         }
 
-        stage('Build Image') {
+        stage('Build Docker Image') {
             steps {
-                sh 'docker build -t neeraj91/flask-app:latest .'
+                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+            }
+        }
+
+        stage('SonarQube Scan') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh """
+                        sonar-scanner \
+                          -Dsonar.projectKey=${SONAR_PROJECT} \
+                          -Dsonar.projectName=${SONAR_PROJECT} \
+                          -Dsonar.sources=. \
+                          -Dsonar.python.version=3
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 3, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('OWASP Dependency-Check') {
+            steps {
+                dependencyCheck(
+                    additionalArguments: '''
+                        --scan .
+                        --format HTML
+                        --format XML
+                        --out owasp-report
+                        --enableExperimental
+                    ''',
+                    odcInstallation: 'OWASP-DC'
+                )
+            }
+            post {
+                always {
+                    dependencyCheckPublisher(
+                        pattern: 'owasp-report/dependency-check-report.xml'
+                    )
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh """
+                    trivy image \
+                      --exit-code 1 \
+                      --severity CRITICAL \
+                      --no-progress \
+                      --format table \
+                      ${DOCKER_IMAGE}:${DOCKER_TAG}
+                """
+            }
+            post {
+                always {
+                    sh """
+                        trivy image \
+                          --exit-code 0 \
+                          --severity HIGH,CRITICAL \
+                          --format json \
+                          --output trivy-report.json \
+                          ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    """
+                    archiveArtifacts artifacts: 'trivy-report.json',
+                                     fingerprint: true
+                }
             }
         }
 
@@ -21,40 +100,34 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh '''
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker push neeraj91/flask-app:latest
-                    '''
+                    sh """
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        docker tag  ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                        docker push ${DOCKER_IMAGE}:latest
+                    """
                 }
             }
         }
 
-        stage('Run Flask App') {
+        stage('Deploy to Minikube') {
             steps {
-                sh '''
-                    docker stop flask-app || true
-                    docker rm flask-app || true
-                    docker run -d \
-                        --name flask-app \
-                        -p 5000:5000 \
-                        neeraj91/flask-app:latest
-                '''
+                sh """
+                    kubectl set image deployment/flask-app \
+                      flask-app=${DOCKER_IMAGE}:${DOCKER_TAG}
+                    kubectl rollout status deployment/flask-app --timeout=60s
+                """
             }
         }
-
-        stage('Test') {
-            steps {
-                sh '''
-                    sleep 2
-                    echo "Hit http://localhost:5000 to see the app"
-                '''
-            }
-        }
-
     }
-        post {
-            always {
-                cleanWs()
-            }
+
+    post {
+        success {
+            echo "BUILD SUCCESS - Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+            echo "Trivy: CLEAN | OWASP: CLEAN | SonarQube: PASSED"
         }
+        failure {
+            echo "BUILD FAILED - Check console output"
+        }
+    }
 }
