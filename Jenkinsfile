@@ -101,28 +101,30 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh """
+                    sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-                        docker tag  ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                        docker push ${DOCKER_IMAGE}:latest
-                    """
+                        docker push $DOCKER_IMAGE:$DOCKER_TAG
+                        docker tag  $DOCKER_IMAGE:$DOCKER_TAG $DOCKER_IMAGE:latest
+                        docker push $DOCKER_IMAGE:latest
+                    '''
                 }
             }
         }
 
         stage('Deploy to k8s') {
-    steps {
-        sh """
-            sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${DOCKER_TAG}|g' deployment.yaml
-            kubectl apply -f deployment.yaml
-            kubectl apply -f service.yaml
-            kubectl rollout status deployment/flask-app --timeout=60s
-        """
-    }
-}
+            steps {
+                sh """
+                    sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${DOCKER_TAG}|g' deployment.yaml
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
+                    kubectl rollout status deployment/flask-app --timeout=60s
+                """
+            }
+        }
 
-    post {
+    }  // ← closes stages
+
+    post {  // ← sibling of stages, inside pipeline
         success {
             echo "BUILD SUCCESS - Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
             echo "Trivy: CLEAN | OWASP: CLEAN | SonarQube: PASSED"
@@ -134,4 +136,5 @@ pipeline {
             echo "BUILD FAILED - Check console output"
         }
     }
-}
+
+}  // ← closes pipeline
