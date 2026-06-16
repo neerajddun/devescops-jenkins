@@ -111,35 +111,16 @@ pipeline {
             }
         }
 
-      stage('Deploy to k8s') {
-    steps {
-        sh """
-            kubectl apply -f deployment.yaml
-            kubectl apply -f service.yaml
-
-            kubectl set image deployment/flask-app \
-                flask-app=${DOCKER_IMAGE}:${DOCKER_TAG}
-
-            kubectl rollout status deployment/flask-app --timeout=300s
-
-            kubectl wait \
-                --for=condition=available \
-                deployment/flask-app \
-                --timeout=300s
-        """
-    }
-}
-    post {  // ← sibling of stages, inside pipeline
-        success {
-            echo "BUILD SUCCESS - Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "Trivy: CLEAN | OWASP: CLEAN | SonarQube: PASSED"
+        stage('Deploy to k8s') {
+            steps {
+                sh """
+                    sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${DOCKER_TAG}|g' deployment.yaml
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
+                    kubectl set image deployment/flask-app flask-app=${DOCKER_IMAGE}:${DOCKER_TAG}
+            kubectl rollout status deployment/flask-app --timeout=120s    
+                """
+            }
         }
-        unstable {
-            echo "BUILD UNSTABLE - Security issues found, check OWASP/Trivy reports"
-        }
-        failure {
-            echo "BUILD FAILED - Check console output"
-        }
-    }
 
-}  // ← closes pipeline
+    }  
