@@ -152,6 +152,7 @@ stages {
     }
 }
 
+}
 post {
 
     success {
