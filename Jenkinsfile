@@ -117,7 +117,6 @@ pipeline {
                     sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${DOCKER_TAG}|g' deployment.yaml
                     kubectl apply -f deployment.yaml
                     kubectl apply -f service.yaml
-                    kubectl rollout status deployment/flask-app --timeout=60s
                 """
             }
         }
