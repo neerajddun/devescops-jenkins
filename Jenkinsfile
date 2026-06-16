@@ -61,6 +61,8 @@ pipeline {
                     odcInstallation: 'OWASP-DC'
                 )
             }
+
+        }
             post {
                 always {
                     dependencyCheckPublisher(
@@ -68,7 +70,7 @@ pipeline {
                     )
                 }
             }
-        }
+        
 
         stage('Trivy Image Scan') {
             steps {
