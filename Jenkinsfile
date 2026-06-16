@@ -2,19 +2,12 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE   = "neeraj91/flask-app"
-        DOCKER_TAG     = "${BUILD_NUMBER}"
-        SONAR_PROJECT  = "flask-app"
+        DOCKER_IMAGE  = "neeraj91/flask-app"
+        DOCKER_TAG    = "${BUILD_NUMBER}"
+        SONAR_PROJECT = "flask-app"
     }
 
     stages {
-
-        stage('Checkout') {
-            steps {
-                git branch: 'master',
-                    url: 'https://github.com/neerajddun/devescops-jenkins.git'
-            }
-        }
 
         stage('Build Docker Image') {
             steps {
@@ -23,63 +16,67 @@ pipeline {
         }
 
         stage('SonarQube Scan') {
-        steps {
-          withSonarQubeEnv('SonarQube') {
-            script {
-                def scannerHome = tool 'SonarScanner'
-                sh """
-                    ${scannerHome}/bin/sonar-scanner \
-                      -Dsonar.projectKey=${SONAR_PROJECT} \
-                      -Dsonar.projectName=${SONAR_PROJECT} \
-                      -Dsonar.sources=. \
-                      -Dsonar.python.version=3
-                """
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    script {
+                        def scannerHome = tool 'SonarScanner'
+                        sh """
+                            ${scannerHome}/bin/sonar-scanner \
+                              -Dsonar.projectKey=${SONAR_PROJECT} \
+                              -Dsonar.projectName=${SONAR_PROJECT} \
+                              -Dsonar.sources=. \
+                              -Dsonar.python.version=3
+                        """
+                    }
+                }
             }
         }
-    }
-}
 
-       stage('Quality Gate') {
-    steps {
-        sleep(time: 15, unit: 'SECONDS')   // ADD THIS
-        timeout(time: 5, unit: 'MINUTES') { // increase from 3 → 5
-            waitForQualityGate abortPipeline: true
+        stage('Quality Gate') {
+            steps {
+                sleep(time: 15, unit: 'SECONDS')
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
         }
-    }
-}
-stage('OWASP Dependency-Check') {
-    steps {
-        dependencyCheck(
-            additionalArguments: '''
-                --scan .
-                --format HTML
-                --format XML
-                --out owasp-report
-                --enableExperimental
-            ''',
-            odcInstallation: 'OWASP-DC'
-        )
-    }
-    post {                          // sibling of steps, not inside it
-        always {
-            dependencyCheckPublisher(
-                pattern: 'owasp-report/dependency-check-report.xml'
-            )
+
+        stage('OWASP Dependency-Check') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    dependencyCheck(
+                        additionalArguments: """
+                            --scan ${WORKSPACE}
+                            --format HTML
+                            --format XML
+                            --out ${WORKSPACE}/owasp-report
+                            --enableExperimental
+                        """,
+                        odcInstallation: 'OWASP-DC'
+                    )
+                }
+            }
+            post {
+                always {
+                    dependencyCheckPublisher(
+                        pattern: '**/dependency-check-report.xml'
+                    )
+                }
+            }
         }
-    }
-}
-        
 
         stage('Trivy Image Scan') {
             steps {
-                sh """
-                    trivy image \
-                      --exit-code 1 \
-                      --severity CRITICAL \
-                      --no-progress \
-                      --format table \
-                      ${DOCKER_IMAGE}:${DOCKER_TAG}
-                """
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    sh """
+                        trivy image \
+                          --exit-code 1 \
+                          --severity CRITICAL \
+                          --no-progress \
+                          --format table \
+                          ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    """
+                }
             }
             post {
                 always {
@@ -129,6 +126,9 @@ stage('OWASP Dependency-Check') {
         success {
             echo "BUILD SUCCESS - Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
             echo "Trivy: CLEAN | OWASP: CLEAN | SonarQube: PASSED"
+        }
+        unstable {
+            echo "BUILD UNSTABLE - Security issues found, check OWASP/Trivy reports"
         }
         failure {
             echo "BUILD FAILED - Check console output"
