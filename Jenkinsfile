@@ -112,15 +112,15 @@ pipeline {
         }
 
         stage('Deploy to k8s') {
-            steps {
-                sh """
-                    kubectl set image deployment/flask-app \
-                      flask-app=${DOCKER_IMAGE}:${DOCKER_TAG}
-                    kubectl rollout status deployment/flask-app --timeout=60s
-                """
-            }
-        }
+    steps {
+        sh """
+            sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${DOCKER_TAG}|g' deployment.yaml
+            kubectl apply -f deployment.yaml
+            kubectl apply -f service.yaml
+            kubectl rollout status deployment/flask-app --timeout=60s
+        """
     }
+}
 
     post {
         success {
